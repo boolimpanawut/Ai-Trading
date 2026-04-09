@@ -98,6 +98,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:1
 <div class="sec">AI model</div>
 <div id="aiModel" style="background:var(--bg1);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-bottom:14px"></div>
 
+<!-- AI RESEARCH REPORT -->
+<div class="sec">AI research report <span style="font-size:9px;color:var(--dim)">(auto-updates hourly)</span></div>
+<div id="aiReport" style="background:var(--bg1);border:1px solid var(--border);border-radius:9px;padding:12px;margin-bottom:14px;font-size:11px;font-family:var(--mono);line-height:1.7;color:var(--muted)">Loading report...</div>
+
 <!-- CLOSED TRADES -->
 <div class="sec">Recent trades</div>
 <div id="trades"></div>
@@ -143,7 +147,7 @@ async function poll(){
   }catch(e){document.getElementById('ls').textContent='Error';console.error(e)}
 }
 
-function render(){rStats();rOpen();rModes();rAI();rTrades();rMonthly();
+function render(){rStats();rOpen();rModes();rAI();rReport();rTrades();rMonthly();
   document.getElementById('upd').textContent='Updated: '+new Date().toLocaleString('th-TH')}
 
 function rStats(){
@@ -196,6 +200,44 @@ function rAI(){
     <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:11px;font-weight:500">AI Learning Engine</span><span style="font-size:10px;font-family:var(--mono);color:${trained?'var(--green)':'var(--muted)'}">${trained?'Trained on '+n+' trades':'Need '+(30-n)+' more trades'}</span></div>
     <div class="bar" style="height:5px;margin-bottom:8px"><div class="bar-f" style="width:${Math.min(n/30*100,100)}%;background:${trained?'var(--green)':'var(--amber)'}"></div></div>
     <div style="font-size:9px;color:var(--dim);font-family:var(--mono)">Model auto-retrains every 50 trades. Features: direction, hour, strategy, SL distance, lot size, balance, drawdown</div>`}
+
+function rReport(){
+  const el=document.getElementById('aiReport');
+  const tr=D.trades;
+  if(!tr.length){el.innerHTML='<span style="color:var(--dim)">Waiting for trade data...</span>';return}
+  let h='';
+  h+='<div style="color:var(--text);font-weight:500;margin-bottom:6px">Strategy Performance</div>';
+  const modes=['scalp','day','fvg','sb'];
+  for(const m of modes){
+    for(const s of ['XAUUSD.s','EURUSD.s']){
+      const mt=tr.filter(t=>(t.mode===m||t.strategy===m)&&t.symbol===s);
+      if(mt.length<2)continue;
+      const w=mt.filter(t=>t.pnl>0),l=mt.filter(t=>t.pnl<=0);
+      const wr=Math.round(w.length/mt.length*100);
+      const avgW=w.length?(w.reduce((a,t)=>a+t.pnl,0)/w.length):0;
+      const avgL=l.length?Math.abs(l.reduce((a,t)=>a+t.pnl,0)/l.length):1;
+      const rr=avgL>0?(avgW/avgL).toFixed(2):'—';
+      const pnl=mt.reduce((a,t)=>a+(t.pnl||0),0);
+      const meets=wr>=70&&parseFloat(rr)>=1.5;
+      const c=meets?'var(--green)':wr>=55?'var(--amber)':'var(--red)';
+      const sn=s.includes('XAU')?'XAU':'EUR';
+      h+=`<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)"><span>${sn} ${m.toUpperCase()}</span><span>${mt.length}tr <span style="color:${c}">WR=${wr}%</span> R:R=${rr}${meets?' ★':''}</span></div>`;
+    }
+  }
+  const hm={};tr.forEach(t=>{if(!t.timestamp)return;const hr=parseInt(t.timestamp.slice(11,13));if(!hm[hr])hm[hr]={w:0,l:0};if(t.pnl>0)hm[hr].w++;else hm[hr].l++});
+  const hrs=Object.entries(hm).map(([h,v])=>({hour:parseInt(h),n:v.w+v.l,wr:Math.round(v.w/(v.w+v.l)*100)})).filter(x=>x.n>=3).sort((a,b)=>b.wr-a.wr);
+  if(hrs.length>=3){
+    h+='<div style="color:var(--text);font-weight:500;margin:8px 0 4px">Best/Worst Hours</div>';
+    h+=`<span style="color:var(--green)">Best:</span> ${hrs.slice(0,3).map(x=>x.hour+':00('+x.wr+'%)').join(', ')}`;
+    h+=`<br><span style="color:var(--red)">Worst:</span> ${hrs.slice(-3).reverse().map(x=>x.hour+':00('+x.wr+'%)').join(', ')}`;
+  }
+  h+='<div style="color:var(--text);font-weight:500;margin:8px 0 4px">Recommendations</div>';
+  let recs=[];
+  for(const m of modes){const mt=tr.filter(t=>t.mode===m||t.strategy===m);if(mt.length<5)continue;const wr=Math.round(mt.filter(t=>t.pnl>0).length/mt.length*100);if(wr<40)recs.push(`<span style="color:var(--red)">⚠ ${m.toUpperCase()}: WR ${wr}% → add filter</span>`);if(wr>=75)recs.push(`<span style="color:var(--green)">✓ ${m.toUpperCase()}: WR ${wr}% → increase risk</span>`);}
+  if(!recs.length)recs.push('<span style="color:var(--dim)">Need 30+ trades for recommendations</span>');
+  h+=recs.join('<br>');
+  el.innerHTML=h;
+}
 
 function rTrades(){
   const tr=D.trades.slice(0,15);
